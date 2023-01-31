@@ -1,5 +1,5 @@
 ---
-title: "Executive Summary"
+title: "Executive Summary of Master's Thesis"
 author: "Max Spehlmann"
 date: "`r Sys.Date()`"
 output: 
@@ -13,7 +13,9 @@ Step one:
 Import microbiology and water chemistry data
 
 -->
+### Introduction:
 
+#### Throughout the summer and fall of 2020, water samples were collected from the Whitefish Bay, Wisconsin water distribution system. Water quality parameters were measured and the following ranges of values were obtained.
 
 ```{r setup_and_import, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -32,8 +34,6 @@ Meta_Data <- read_csv(here("data", "meta_data.csv"),
                       col_types = cols(Collection_Date = col_date(format = "%m/%d/%y"))) %>% mutate(Station_Num = fct_relevel(Station_Num, "Post Filtration", "Post Chlorination", "Finished Water", "1", "3", "4", "5")) %>%
                mutate(distance_from_plant_km = round(miles_from_plant*1.61,2)) %>% mutate(Location_Clean = fct_relevel(Location_Clean, "Treatment Plant", "Stn. 1", "Stn. 3", "Stn. 4", "Stn. 5"))
 ```
-
-### Characterizing the water chemistry of the Whitefish Bay, Wisconsin water service district
 
 
 ```{r descriptive_water_quality}
@@ -116,11 +116,11 @@ main <- cowplot::plot_grid(main, cowplot::get_legend(chlorine_plot + theme(legen
 main
 ```
 
-### Free Chlorine Measurements by Date Sampled and Location
+#### Every parameter was then analyzed by sampling date and sampling location. For example, the following graph shows that the chlorine residual declined, on average 0.01 ppm from one station to the next.
 
 
 
-```{r free_chlorine, echo=FALSE}
+```{r free_chlorine, echo= TRUE}
 chlorine_scatter_plot <- for_analyte_boxplots %>%
   filter(analyte %in% "Chlorine_Free_mg_L") %>%
   ggplot() +
@@ -130,8 +130,15 @@ chlorine_scatter_plot <- for_analyte_boxplots %>%
   scale_y_continuous(limits = c(0,.4), breaks = seq(0, .4,.1)) +
   facet_wrap(facets = vars(Collection_Date), labeller = function(x) format(x, '%m/%d/%Y'))
   
+paste("The average decrease in Chlorine residual from one station to the next was," , round(mean((for_analyte_boxplots %>%
+                                                                                                       filter(analyte %in% "Chlorine_Free_mg_L") %>% mutate(Station_Num = as.numeric(as.character((Station_Num)))) %>% group_by(sample_name_abridged) %>% slice(1) %>% ungroup() %>% filter(Collection_Date != "2020-10-01") %>% group_by(Collection_Date) %>% arrange(-(Station_Num)) %>% mutate(dif = value - lag(value)) %>% filter(!is.na(dif)) %>% ungroup() %>% group_by(Station_Num) %>% summarize(mean_decr = mean(dif)))$mean_decr), 2), "ppm")
+
 chlorine_scatter_plot
 ```
+
+#### Note: Samples take on 10/01/20 were clearly anamolous. The chlorine residual increased distally from the treatment plant. This was later determined to be because of an issue in the treatment plant, which was adding too much chlorine into the finished water the night prior to sampling.
+
+#### Next, the concentration of microbial cells were compared across sampling stations. THe lowest concentration occurred in the finished water from the treatment plant. The next most distal stations carried significantly more cells. Evidently, the water increased in microbial load, until station 5, at which point the microbial activity declined.
 
 
 ```{r Figure5, out.width= "60%", fig.width=5.14, warning=FALSE, message=FALSE}
