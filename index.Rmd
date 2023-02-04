@@ -15,28 +15,48 @@ Import microbiology and water chemistry data
 -->
 ### Introduction:
 
-#### Throughout the summer and fall of 2020, water samples were collected from the Whitefish Bay, Wisconsin water distribution system. Water quality parameters were measured and the following ranges of values were obtained.
+<br />
 
-```{r setup_and_import, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+#### Throughout the summer and fall of 2020, water samples were collected from the Whitefish Bay, Wisconsin water distribution system. Samples were analyzed to determine the effect of water rention time on microbial growth. 
+
+<br />
+
+##### The following code loads the packages used in this project, imports the sampling data and prepares the data for analysis. 
+
+<br />
+
+```{r setup_and_import, include=TRUE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, fig.align = 'center')
 
 #load necessary packages
 library(tidyverse)
 library(here)
 library(ggthemes)
 library(ggprism)
+library(vegan)
 
 #Set a ggplot theme
-theme_set(theme_minimal(base_size = 12, base_family = "Times"))
+theme_set(theme_minimal())
 
 #import water quality data
 Meta_Data <- read_csv(here("data", "meta_data.csv"),
                       col_types = cols(Collection_Date = col_date(format = "%m/%d/%y"))) %>% mutate(Station_Num = fct_relevel(Station_Num, "Post Filtration", "Post Chlorination", "Finished Water", "1", "3", "4", "5")) %>%
                mutate(distance_from_plant_km = round(miles_from_plant*1.61,2)) %>% mutate(Location_Clean = fct_relevel(Location_Clean, "Treatment Plant", "Stn. 1", "Stn. 3", "Stn. 4", "Stn. 5"))
+
+#import decontamm'ed, trimmed, and averaged AT/TT
+AT <- read_csv(here("data", "abundance_table.csv"))
+clean_TT <- read_csv(here("data", "taxa_table.csv"))
+
+
 ```
 
+<br />
 
-```{r descriptive_water_quality}
+##### At each of 5 stations, the following chemical metadata were measured: free chlorine concentration, specific conductivity, water temperature, dissolved oxygen, and pH. The results were visualized with the following boxplots.
+
+<br />
+
+```{r descriptive_water_quality, fig.cap="Figure 1: Boxplots of sonde-measured water quality analytes."}
 #For analyte boxplots:
 for_analyte_boxplots <- Meta_Data %>% select(sample_name_abridged, Station_Num, Collection_Date, Sp_Cond_us_cm:pH, Chlorine_Free_mg_L, distance_from_plant_km) %>%  
   gather(analyte, value, -c(sample_name_abridged, Station_Num, Collection_Date, distance_from_plant_km)) %>% mutate(Station_Num = fct_relevel(Station_Num, "Post Filtration", "Finished Water", "5", "4", "3", "1")) %>% filter(!(Station_Num %in% c("Finished Water",
@@ -116,11 +136,13 @@ main <- cowplot::plot_grid(main, cowplot::get_legend(chlorine_plot + theme(legen
 main
 ```
 
+<br />
+
 #### Every parameter was then analyzed by sampling date and sampling location. For example, the following graph shows that the chlorine residual declined, on average 0.01 ppm from one station to the next.
 
+<br />
 
-
-```{r free_chlorine, echo= TRUE}
+```{r free_chlorine, echo= TRUE, fig.cap="Figure 2: Free chlorine measurements by sample date and distance from the treatment plant."}
 chlorine_scatter_plot <- for_analyte_boxplots %>%
   filter(analyte %in% "Chlorine_Free_mg_L") %>%
   ggplot() +
@@ -130,18 +152,20 @@ chlorine_scatter_plot <- for_analyte_boxplots %>%
   scale_y_continuous(limits = c(0,.4), breaks = seq(0, .4,.1)) +
   facet_wrap(facets = vars(Collection_Date), labeller = function(x) format(x, '%m/%d/%Y'))
   
-paste("The average decrease in Chlorine residual from one station to the next was," , round(mean((for_analyte_boxplots %>%
-                                                                                                       filter(analyte %in% "Chlorine_Free_mg_L") %>% mutate(Station_Num = as.numeric(as.character((Station_Num)))) %>% group_by(sample_name_abridged) %>% slice(1) %>% ungroup() %>% filter(Collection_Date != "2020-10-01") %>% group_by(Collection_Date) %>% arrange(-(Station_Num)) %>% mutate(dif = value - lag(value)) %>% filter(!is.na(dif)) %>% ungroup() %>% group_by(Station_Num) %>% summarize(mean_decr = mean(dif)))$mean_decr), 2), "ppm")
-
 chlorine_scatter_plot
 ```
 
-#### Note: Samples take on 10/01/20 were clearly anamolous. The chlorine residual increased distally from the treatment plant. This was later determined to be because of an issue in the treatment plant, which was adding too much chlorine into the finished water the night prior to sampling.
+<br />
 
-#### Next, the concentration of microbial cells were compared across sampling stations. THe lowest concentration occurred in the finished water from the treatment plant. The next most distal stations carried significantly more cells. Evidently, the water increased in microbial load, until station 5, at which point the microbial activity declined.
+#### Samples take on 10/01/20 were clearly anamolous. The chlorine residual increased distally from the treatment plant. The cause was later determined to be an issue in the treatment plant, which was adding too much chlorine into the finished water the night prior to sampling.
 
+<br />
 
-```{r Figure5, out.width= "60%", fig.width=5.14, warning=FALSE, message=FALSE}
+#### Next, the concentration of microbial cells were compared across sampling stations. The lowest concentration occurred in the finished water from the treatment plant. The next most distal stations carried significantly more cells. Evidently, the water increased in microbial load, until station 5, at which point the microbial activity declined.
+
+<br />
+
+```{r Figure5, out.width= "60%", fig.width=5.14, warning=FALSE, message=FALSE, fig.cap="Figure 4: Mean cell concentrations measured at treatment plant and four stations. Error bars are the upper and lower Gaussian confidence limits based on the t-distribution. P-values from independent two-sample t-tests, adjusted using the Benjamini-Hochberg procedure, are displayed above the sample type in reference to the treatment plant."}
 df_p_val <- rstatix::t_test(Meta_Data, cell_concentration_cell_mL ~ Location_Clean, ref.group = "Treatment Plant") %>% 
   rstatix::add_xy_position()
 
@@ -162,3 +186,65 @@ ggplot(Meta_Data, (aes(x = Location_Clean, y = cell_concentration_cell_mL))) +
   stat_summary(fun.data = n_fun, geom = "text")
 
 ```
+
+<br />
+
+#### Next, the microbial data was analyzed. DNA was extracted and sequenced from every water sample to determine the identity and relative abundance of each microbe.
+
+<br />
+
+```{R Figure9, fig.cap = "Figure 5: Column chart showing the relative abundance of the top ten most abundant phyla in each sample."}
+#OK so first thing is to pull out the top ten phyla and just make that classic barchart... YAY!
+AT_matrix <- AT %>% column_to_rownames("sample_name_abridged") %>% as.matrix(.)
+
+AT_phyla_glom_long <- data.frame(t(AT_matrix), "ASV_Name" = rownames(t(AT_matrix))) %>% select(ASV_Name, everything()) %>%
+            pivot_longer(cols = starts_with("tap"), values_to = "Relative_Abundance", names_to = "sample_name_abridged") %>% left_join(clean_TT, by = "ASV_Name") %>%
+            group_by(sample_name_abridged, Phylum) %>% summarise(RA_P_G = sum(Relative_Abundance), .groups = "drop")
+
+#find top ten phyla
+top_ten_phylum <- AT_phyla_glom_long %>% ungroup() %>% group_by(Phylum) %>% summarise(total_RA_P_G = sum(RA_P_G), .groups = "drop_last") %>% arrange(-total_RA_P_G) %>% slice(1:11) %>% filter(!is.na(Phylum)) %>% pull(Phylum)
+
+#label everything else "other"
+AT_phyla_glom_long_abridged <- AT_phyla_glom_long %>% mutate(Phylum_Abridged = ifelse(Phylum %in% top_ten_phylum, Phylum, "Other")) %>% group_by(sample_name_abridged, Phylum_Abridged) %>% summarise(RA_P_G_A = sum(RA_P_G), .groups = "drop_last") %>% mutate(Phylum_Abridged = fct_relevel(Phylum_Abridged, "Other", top_ten_phylum)) %>% ungroup()
+
+#Need to set "other" as the last level in the categorical variable of Phylum
+ggplot(AT_phyla_glom_long_abridged, aes(x = sample_name_abridged, y = RA_P_G_A*100, fill = Phylum_Abridged)) + geom_col() + scale_fill_brewer(type = "qual", palette = 3) + ylab("% Relative Abundance") + xlab(NULL) + theme(axis.text.x = element_blank()) + labs(fill = "Phylum")
+```
+
+<br />
+
+#### To determine if the community composition varied significantly between stations, a MANOVA test was performed. The result of the MANOVA test for composition difference between the four field stations was not significant, (p = 0.6, R = 0.1); therefore, the community composition does not vary significantly from station to station. The result of the MANOVA test for composition difference between the four field stations and the treatment plant was significant, (p = 0.02, R = 0.05); therefore, the community within the treatment plant was significantly different from the field stations.
+
+<br />
+
+#### Next, to determine if the microbial diversity varied significantly between samples, several measures of ecological diversity were computed for each sample. The Shannon diversity measurements were then compared using an ANOVA test.
+
+<br />
+
+```{R Figure11, fig.cap = "Figure 6: Boxplots of the Shannon Diversity by station."}
+shannonDivDF <- diversity(AT_matrix, index = "shannon")
+simpsonDivDF <- diversity(AT_matrix, index = "simpson")
+InverseSimpsonDivDF <- diversity(AT_matrix, index = "invsimpson")
+
+
+diversityMeasures <- data.frame("sample_name_abridged" = names(shannonDivDF), "shannonDiv" = as.numeric(shannonDivDF), "simpsonDiv" = as.numeric(simpsonDivDF), "inverseSimpsonDiv" = as.numeric(InverseSimpsonDivDF)) %>% left_join(Meta_Data, by = "sample_name_abridged")
+
+diversityMeasures <- diversityMeasures %>% filter(Location!= "Treatment Plant")
+
+n_fun <- function(x){
+  return(data.frame(y = 4.5, label = paste0("n = ",length(x))))
+}
+
+ANOVA_Shannon <- aov(shannonDiv ~ Location, data = diversityMeasures)
+
+p_value_ANOVA_Shannon <- round(summary(ANOVA_Shannon)[[1]][[5]][1], 2)
+f_value_ANOVA_Shannon <- round(summary(ANOVA_Shannon)[[1]][[4]][1], 2)
+
+#diversity appears unchanged
+ggplot(diversityMeasures, aes(x = factor(Station_Num), y = shannonDiv)) + geom_boxplot(fill = c('#a6cee3','#1f78b4','#b2df8a','#33a02c')) + xlab("Station Number") + ylab("Shannon Div. Index") +
+  stat_summary(fun.data = n_fun, geom = "text")
+```
+
+<br />
+
+#### There were no significant differences between group-means of the field stations as determined by a one-way ANOVA (F(3,25) = 0.83, p = 0.49).
